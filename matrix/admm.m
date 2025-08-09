@@ -125,25 +125,25 @@ end
             eps_pri = sqrt(k*2)*tol_abs + tol_rel*max([norm(A*state.X,'fro'),norm(B*state.Z,'fro'),cnorm]);
             eps_dual = sqrt(k)*tol_abs +  tol_rel*state.rho*norm(A'*state.U,'fro');
         case 'stein'
-            B = -diag_blk(state.argmin_Z_data.rotations);
-            state.U = state.U+A*(alpha*state.X+(1-alpha)*state.X_initial)+B*state.Z;
-            dual_residual_i = 0.25*sum(reshape(( ( repmat(repelem(state.rho,3),1,3) .* (B*(state.Z - state.Z_prev)) ).^2).', 9, [])).';
-            dual_residual = sqrt(sum(dual_residual_i));
-            residual_i = sum(reshape(( ( A*(alpha*state.X+(1-alpha)*state.X_initial)+B*state.Z ).^2).', 9, [])).';
+            B = -state.argmin_Z_data.rotations;
+            state.U = state.U+A*(alpha*state.X+(1-alpha)*state.X_initial)+times_3x3(B,state.Z);
+            dual_residual_i = 0.5*state.rho .* norm_nx3(times_nx3(A',times_3x3(B,state.Z-state.Z_prev)));
+            dual_residual = sqrt(sum(dual_residual_i.^2));
+            residual_i = sum(reshape(( ( A*(alpha*state.X+(1-alpha)*state.X_initial)+times_3x3(B,state.Z) ).^2).', 9, [])).';
             residual = sqrt(sum(residual_i));
             if mod(state.iter,check_interval) == 0
-                state.rho(sqrt(residual_i) > bmu*sqrt(dual_residual_i)) = btao_inc*state.rho(sqrt(residual_i) > bmu*sqrt(dual_residual_i));
-                state.U(repelem(sqrt(residual_i) > bmu*sqrt(dual_residual_i),3),:) = state.U(repelem(sqrt(residual_i) > bmu*sqrt(dual_residual_i),3),:)/btao_inc;
-                state.rho(sqrt(dual_residual_i) > bmu*sqrt(residual_i)) = state.rho(sqrt(dual_residual_i) > bmu*sqrt(residual_i))/btao_dec;
-                state.U(repelem(sqrt(dual_residual_i) > bmu*sqrt(residual_i),3),:) = state.U(repelem(sqrt(dual_residual_i) > bmu*sqrt(residual_i),3),:)*btao_dec;        
-                state.argmin_X_data.is_penalty_rescaled = any(state.rho ~= state.rho_prev);
+                state.argmin_X_data.is_penalty_rescaled = any(state.rho(sqrt(residual_i) > bmu*dual_residual_i)) | any(state.rho(dual_residual_i > bmu*sqrt(residual_i)));
+                state.rho(sqrt(residual_i) > bmu*dual_residual_i) = btao_inc*state.rho(sqrt(residual_i) > bmu*dual_residual_i);
+                state.U(repelem(sqrt(residual_i) > bmu*dual_residual_i,3),:) = state.U(repelem(sqrt(residual_i) > bmu*dual_residual_i,3),:)/btao_inc;
+                state.rho(dual_residual_i > bmu*sqrt(residual_i)) = state.rho(dual_residual_i > bmu*sqrt(residual_i))/btao_dec;
+                state.U(repelem(dual_residual_i > bmu*sqrt(residual_i),3),:) = state.U(repelem(dual_residual_i > bmu*sqrt(residual_i),3),:)*btao_dec;        
             end
             k = size(c,1);
             eps_pri = sqrt(k)*tol_abs + tol_rel*max([sum(sqrt(sum(reshape(sum((A*(alpha*state.X+(1-alpha)*state.X_initial)).^2,2)',3,[]),1))),...
-                                            sum(sqrt(sum(reshape(sum((state.Z).^2,2)',3,[]),1)))]);
-            eps_dual = sqrt(k)*tol_abs +  tol_rel*norm(A'*state.U,'fro');
-            optional_criterion = min(fast_eig(state.Z)) >= 0;
-            %fprintf('Residual: %s Dual residual: %s\n',full(residual),full(dual_residual))
+                                                        sum(sqrt(sum(reshape(sum((state.Z).^2,2)',3,[]),1)))]);
+            eps_dual = sqrt(k)*tol_abs + tol_rel*sum(norm_nx3(times_nx3(A',state.U)));
+            optional_criterion = min(eig_3x3(state.Z)) >= 0;
+            %fprintf('Residual: %s Tol: %s Dual residual: %s Tol: %s\n',full(residual),full(eps_pri), full(dual_residual), full(eps_dual))
     end
     if residual < eps_pri && dual_residual < eps_dual && optional_criterion
       break;
